@@ -31,3 +31,4 @@
 .idea/workspace.xml
 bin
 /Default/
+*.log
