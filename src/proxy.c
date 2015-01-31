@@ -2,6 +2,8 @@
  * proxy.c - Web proxy for COMPSCI 512
  *
  */
+#pragma GCC diagnostic ignored "-Wunused-variable"
+
 
 #include <stdio.h>
 #include "csapp.h"
@@ -103,8 +105,6 @@ int main(int argc, char *argv[]) {
 
         pthread_t clientThread;
 
-        pthread_t test = malloc(sizeof(pthread_t));
-
         int * threadArgs;
         threadArgs = malloc(sizeof(int) * 2);
         threadArgs[0] = connfd;
@@ -177,6 +177,7 @@ void *webTalk(void *args) {
     rio_t server, client;
     char slash[10];
     strcpy(slash, "/");
+
 
     clientfd = ((int *) args)[0];
     serverPort = ((int *) args)[1];
