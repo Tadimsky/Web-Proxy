@@ -101,12 +101,20 @@ int main(int argc, char *argv[]) {
         /* accept a new connection from a client here */
         connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
 
+        pthread_t clientThread;
+
+        pthread_t test = malloc(sizeof(pthread_t));
+
+        int * threadArgs;
+        threadArgs = malloc(sizeof(int) * 2);
+        threadArgs[0] = connfd;
+        threadArgs[1] = serverPort;
+
+        Pthread_create(&clientThread, NULL, webTalk, (void*)threadArgs);
 
 
-        /* you have to write the code to process this new client request */
-
-        /* create a new thread (or two) to process the new connection */
-
+        /* TODO: new connection has been made from client */
+        /* TODO: create a new thread to handle this event so that we can listen for more connections */
     }
 
     if (debug) Close(debugfd);
