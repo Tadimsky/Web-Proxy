@@ -37,6 +37,8 @@ void secureTalk(int clientfd, rio_t client, char *inHost, char *version, int ser
 
 void ignore();
 
+void debug_print(char* msg);
+
 int debug;
 int proxyPort;
 int debugfd;
@@ -185,6 +187,39 @@ void *webTalk(void *args) {
 
     Rio_readinitb(&client, clientfd);
 
+    numBytes = Rio_readlineb(&client, &buf1, MAXLINE);
+    // buf1 now contains the first header sent to the server
+
+    // Get the first part of the URL
+    char * requestParts = strtok(&buf1, " ");
+
+    if (strcmp(requestParts, "GET") == 0) {
+    	debug_print((char*)buf1);
+
+    	// Get the URL of the Request
+    	requestParts = strtok(NULL, " ");
+    	int retVal = find_target_address(requestParts, &host, &url, &serverPort);
+    	// build up the file to request
+    	file = malloc(strlen(&url) + 1);
+    	// prepend a slash
+    	strcat(file, &slash);
+    	// append the file from the request
+    	strcat(file, &url);
+
+
+    	debug_print(host);
+		debug_print(file);
+    }
+    else {
+    	if (strcmp(requestParts, "CONNECT") == 0) {
+			debug_print("CONNECT");
+    	}
+    	else {
+    		debug_print(requestParts);
+    		debug_print("What just happened?");
+    	}
+    }
+
     // Determine protocol (CONNECT or GET)
 
     // GET: open connection to webserver (try several times, if necessary)
@@ -299,7 +334,8 @@ int find_target_address(char *uri, char *target_address, char *path,
 
         }
         else {
-            pathbegin++;
+        	// TODO: Removed this, why was it here? are things going to explode?!
+            //pathbegin++;
             strcpy(path, pathbegin);
         }
         return 0;
@@ -339,4 +375,8 @@ void format_log_entry(char *logstring, int sock, char *uri, int size) {
     d = host & 0xff;
 
     sprintf(logstring, "%s: %d.%d.%d.%d %s %d\n", buffer, a, b, c, d, uri, size);
+}
+
+void debug_print(char* msg) {
+	fprintf(stderr, "%s\n", msg);
 }
