@@ -200,15 +200,34 @@ void *webTalk(void *args) {
     	requestParts = strtok(NULL, " ");
     	int retVal = find_target_address(requestParts, &host, &url, &serverPort);
     	// build up the file to request
-    	file = malloc(strlen(&url) + 1);
-    	// prepend a slash
-    	strcat(file, &slash);
-    	// append the file from the request
-    	strcat(file, &url);
+    	file = malloc(strlen(&url));
+    	strcpy(file, url);
 
+    	// Get the HTTP Method
+    	char * httpMethod = strtok(NULL, " ");
 
-    	debug_print(host);
-		debug_print(file);
+    	// host - the server
+    	// file - the requested resource
+
+		serverfd = Open_clientfd(&host, serverPort);
+		Rio_readinitb(&server, serverfd);
+
+		// reformat the first line
+		sprintf(buf2, "%s %s %s", "GET", file, httpMethod);
+		do {
+			Rio_writen(serverfd, buf2, strlen(buf2));
+			byteCount = Rio_readlineb(&client, &buf2, MAXLINE);
+		}
+		while (1);
+
+		debug_print("Received - now sending");
+
+		do {
+			byteCount = Rio_readlineb(&server, &buf3, MAXLINE);
+			Rio_writen(clientfd, &buf3, byteCount);
+		}
+		while (byteCount > 0);
+
     }
     else {
     	if (strcmp(requestParts, "CONNECT") == 0) {
