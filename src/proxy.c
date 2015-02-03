@@ -104,6 +104,7 @@ int main(int argc, char *argv[]) {
 
         /* accept a new connection from a client here */
         connfd = Accept(listenfd, (SA *) &clientaddr, &clientlen);
+        debug_print("New connection");
 
         pthread_t clientThread;
 
@@ -193,6 +194,10 @@ void *webTalk(void *args) {
     // Get the first part of the URL
     char * requestParts = strtok(&buf1, " ");
 
+    if (requestParts == NULL) {
+    	return NULL;
+    }
+
     if (strcmp(requestParts, "GET") == 0) {
     	debug_print((char*)buf1);
 
@@ -235,32 +240,6 @@ void *webTalk(void *args) {
 			}
 		}
 
-		/*
-		while (1) { // strcmp(&buf2, "\r\n") > 0
-			// read the next line
-			byteCount = Rio_readlineb(&client, &buf2, MAXLINE);
-			// check if finished with input
-			// for some reason, adding this as while condition makes things not send correctly
-			if (strcmp(&buf2, "\r\n") == 0) {
-				break;
-			}
-
-			if (strstr(&buf2, "Connection: ") || strstr(&buf2, "Proxy-Connection: ")) {
-				// we don't want to send keep-alive, set them to that value.
-				void * space = strstr(buf2, " ");
-				char* value = space + 1;
-				strcpy(value, "close\r\n");
-			}
-
-			// send the data to the server
-			if (!sentGET) {
-				sentGET = 1;
-				Rio_writen(serverfd, buf3, strlen(buf3));
-			}
-			Rio_writen(serverfd, buf2, strlen(buf2));
-		}
-		*/
-
 		debug_print("Received - now sending");
 
 		do {
@@ -269,6 +248,7 @@ void *webTalk(void *args) {
 			Rio_writen(clientfd, &buf3, byteCount);
 		}
 		while (byteCount > 0);
+		debug_print("Transferred.");
 
     }
     else {
@@ -280,16 +260,6 @@ void *webTalk(void *args) {
     		debug_print("What just happened?");
     	}
     }
-
-    // Determine protocol (CONNECT or GET)
-
-    // GET: open connection to webserver (try several times, if necessary)
-
-    /* GET: Transfer first header to webserver */
-
-    // GET: Transfer remainder of the request
-
-    // GET: now receive the response
 
     // CONNECT: call a different function, securetalk, for HTTPS
 
