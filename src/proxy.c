@@ -214,16 +214,58 @@ void *webTalk(void *args) {
 
 		// reformat the first line
 		sprintf(buf2, "%s %s %s", "GET", file, httpMethod);
-		do {
-			Rio_writen(serverfd, buf2, strlen(buf2));
-			byteCount = Rio_readlineb(&client, &buf2, MAXLINE);
+		Rio_writen(serverfd, buf2, strlen(buf2));
+
+		// while not the end of the request
+		while (strcmp(buf2, "\r\n") > 0) {
+			byteCount = Rio_readlineb(&client, buf2, MAXLINE);
+
+			if (strstr(buf2, "Connection: ") || strstr(buf2, "Proxy-Connection: ")) {
+				// we don't want to send keep-alive, set that to close.
+				void * space = strstr(buf2, " ");
+				char* value = space + 1;
+				strcpy(value, "close\r\n");
+			}
+			if (strstr(buf2, "Keep-Alive:")) {
+				// don't send this
+			}
+			else {
+				// update length of string in case of modifications to header
+				Rio_writen(serverfd, buf2, strlen(buf2));
+			}
 		}
-		while (1);
+
+		/*
+		while (1) { // strcmp(&buf2, "\r\n") > 0
+			// read the next line
+			byteCount = Rio_readlineb(&client, &buf2, MAXLINE);
+			// check if finished with input
+			// for some reason, adding this as while condition makes things not send correctly
+			if (strcmp(&buf2, "\r\n") == 0) {
+				break;
+			}
+
+			if (strstr(&buf2, "Connection: ") || strstr(&buf2, "Proxy-Connection: ")) {
+				// we don't want to send keep-alive, set them to that value.
+				void * space = strstr(buf2, " ");
+				char* value = space + 1;
+				strcpy(value, "close\r\n");
+			}
+
+			// send the data to the server
+			if (!sentGET) {
+				sentGET = 1;
+				Rio_writen(serverfd, buf3, strlen(buf3));
+			}
+			Rio_writen(serverfd, buf2, strlen(buf2));
+		}
+		*/
 
 		debug_print("Received - now sending");
 
 		do {
-			byteCount = Rio_readlineb(&server, &buf3, MAXLINE);
+			byteCount = Rio_readnb(&server, &buf3, MAXLINE);
+
 			Rio_writen(clientfd, &buf3, byteCount);
 		}
 		while (byteCount > 0);
