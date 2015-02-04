@@ -13,6 +13,8 @@
 #define   LOG_FILE      "proxy.log"
 #define   DEBUG_FILE    "proxy.debug"
 
+#define MAX_CONNECTION_ATTEMPTS 5
+
 
 /*============================================================
  * function declarations
@@ -95,7 +97,6 @@ int main(int argc, char *argv[]) {
 
     /* if writing to log files, force each thread to grab a lock before writing
        to the files */
-
     pthread_mutex_init(&mutex, NULL);
 
     while (1) {
@@ -188,81 +189,126 @@ void *webTalk(void *args) {
 
     Rio_readinitb(&client, clientfd);
 
-    numBytes = Rio_readlineb(&client, &buf1, MAXLINE);
-    // buf1 now contains the first header sent to the server
+    /* Read the Request Header - GET/CONNECT/POST/etc. */
+    numBytes = Rio_readlineb(&client, buf1, MAXLINE);
 
-    // Get the first part of the URL
-    char * requestParts = strtok(&buf1, " ");
+    if (numBytes < 0 || buf1 == NULL) {
+    	debug_print("Invalid Request.");
+    	return NULL;
+    }
+    /* Splitting things apart - need to save state */
+    char strtokState[MAXLINE];
+    char * httpMethod;
+    httpMethod = strtok_r(buf1, " ", &strtokState);
 
-    if (requestParts == NULL) {
+    if (httpMethod == NULL) {
+    	debug_print("Invalid Request.");
     	return NULL;
     }
 
-    if (strcmp(requestParts, "GET") == 0) {
-    	debug_print((char*)buf1);
+    if (strcmp(httpMethod, "GET") == 0) {
+    	/* Get the URL of the Request */
+    	char * requestParts = strtok_r(NULL, " ", &strtokState);
+    	if (requestParts == NULL) {
+    		debug_print("Invalid Request.");
+    		return NULL;
+    	}
 
-    	// Get the URL of the Request
-    	requestParts = strtok(NULL, " ");
-    	int retVal = find_target_address(requestParts, &host, &url, &serverPort);
-    	// build up the file to request
-    	file = malloc(strlen(&url));
-    	strcpy(file, url);
+    	if (find_target_address(requestParts, host, url, &serverPort) < 0) {
+    		debug_print("Could not Parse Request.");
+    		return NULL;
+    	}
+		/* better naming */
+    	file = url;
 
-    	// Get the HTTP Method
-    	char * httpMethod = strtok(NULL, " ");
+    	/* Get the HTTP Version used */
+    	char * httpVersion = NULL;
 
-    	// host - the server
-    	// file - the requested resource
+    	httpVersion = strtok_r(NULL, " ", &strtokState);
+    	/* sometimes httpVersion is not specified by the client */
+    	if (httpVersion == NULL) {
+    		/* just make the httpVersion by \r\n for valid headers */
+    		httpVersion = "\r\n";
+    	}
 
-		serverfd = Open_clientfd(&host, serverPort);
+    	serverfd = -1;
+    	int connectionAttempts = 0;
+
+    	/* connect until we succeed */
+    	/* or if we exceed MAX_CONNECTION_ATTEMPTS - then exit */
+    	while (serverfd < 0) {
+    		if (connectionAttempts > MAX_CONNECTION_ATTEMPTS) {
+				fprintf(stderr, "Could not connect to: %s\n", host);
+				return NULL;
+			}
+    		serverfd = Open_clientfd(host, serverPort);
+    		connectionAttempts++;
+    	}
+
 		Rio_readinitb(&server, serverfd);
 
-		// reformat the first line
-		sprintf(buf2, "%s %s %s", "GET", file, httpMethod);
+		/* reformat the new GET header */
+		sprintf(buf2, "%s %s %s", "GET", file, httpVersion);
 		Rio_writen(serverfd, buf2, strlen(buf2));
 
-		// while not the end of the request
+		fprintf(stdout, "Raw Header: %s", buf1);
+    	fprintf(stdout, "New Header: %s", buf2);
+
+		/* while we haven't read the last line - the end of the request */
 		while (strcmp(buf2, "\r\n") > 0) {
+			// TODO: is this necessary?
+			//memset((void*)buf2, 0, strlen(buf2));
+
+			/* read new header from client */
 			byteCount = Rio_readlineb(&client, buf2, MAXLINE);
 
+			if (byteCount < 0 || buf2 == NULL) {
+				debug_print("Did not receive header from client.");
+				return NULL;
+			}
+
+			/* check for connection headers */
 			if (strstr(buf2, "Connection: ") || strstr(buf2, "Proxy-Connection: ")) {
-				// we don't want to send keep-alive, set that to close.
-				void * space = strstr(buf2, " ");
-				char* value = space + 1;
-				strcpy(value, "close\r\n");
+				/* we don't want to send keep-alive, set that to close. */
+				/* We also want to send it as Connection to the server. */
+				strcpy(buf2, "Connection: close\r\n");
 			}
 			if (strstr(buf2, "Keep-Alive:")) {
-				// don't send this
+				/* don't send this at all - we don't likes it my precious */
 			}
 			else {
-				// update length of string in case of modifications to header
+				/* update length of string in case of modifications to header */
 				Rio_writen(serverfd, buf2, strlen(buf2));
 			}
 		}
+		/* client sent last blank line in header requests - shutdown server connection */
+		shutdown(serverfd, 1);
 
-		debug_print("Received - now sending");
+		debug_print("Sent Headers - now receiving");
 
 		do {
-			byteCount = Rio_readnb(&server, &buf3, MAXLINE);
-
-			Rio_writen(clientfd, &buf3, byteCount);
+			/* read the data from the server */
+			byteCount = Rio_readnb(&server, buf3, MAXLINE);
+			/* send it to the client */
+			Rio_writen(clientfd, buf3, byteCount);
 		}
 		while (byteCount > 0);
+		/* Means EOF: shutdown sending to client */
+		shutdown(clientfd, 1);
 		debug_print("Transferred.");
-
     }
     else {
-    	if (strcmp(requestParts, "CONNECT") == 0) {
+    	if (strcmp(httpMethod, "CONNECT") == 0) {
 			debug_print("CONNECT");
+			// CONNECT: call a different function, securetalk, for HTTPS
     	}
     	else {
-    		debug_print(requestParts);
+    		// a different HTTP request - POST, etc
     		debug_print("What just happened?");
+    		debug_print(httpMethod);
     	}
     }
-
-    // CONNECT: call a different function, securetalk, for HTTPS
-
+    return NULL;
 }
 
 
@@ -388,7 +434,7 @@ void format_log_entry(char *logstring, int sock, char *uri, int size) {
     struct sockaddr_in addr;
     unsigned long host;
     unsigned char a, b, c, d;
-    int len = sizeof(addr);
+    socklen_t len = sizeof(addr);
 
     now = time(NULL);
     strftime(buffer, MAXLINE, "%a %d %b %Y %H:%M:%S %Z", localtime(&now));
@@ -409,5 +455,5 @@ void format_log_entry(char *logstring, int sock, char *uri, int size) {
 }
 
 void debug_print(char* msg) {
-	fprintf(stderr, "%s\n", msg);
+	fprintf(stdout, "%s\n", msg);
 }
