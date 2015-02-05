@@ -86,6 +86,9 @@ int main(int argc, char *argv[]) {
     /* start listening on proxy port */
 
     listenfd = Open_listenfd(proxyPort);
+    if (listenfd < 0) {
+    	exit(-1);
+    }
 
     optval = 1;
     setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (const void *) &optval, sizeof(int));
@@ -174,6 +177,7 @@ void *webTalk(void *args) {
     int numBytes, lineNum, serverfd, clientfd, serverPort;
     int tries;
     int byteCount = 0;
+    char firstRequest[MAXLINE];
     char buf1[MAXLINE], buf2[MAXLINE], buf3[MAXLINE];
     char host[MAXLINE];
     char url[MAXLINE], logString[MAXLINE];
@@ -190,12 +194,15 @@ void *webTalk(void *args) {
     Rio_readinitb(&client, clientfd);
 
     /* Read the Request Header - GET/CONNECT/POST/etc. */
-    numBytes = Rio_readlineb(&client, buf1, MAXLINE);
+    numBytes = Rio_readlineb(&client, firstRequest, MAXLINE);
 
-    if (numBytes < 0 || buf1 == NULL) {
+    if (numBytes <= 0 || firstRequest == NULL) {
     	debug_print("Invalid Request.");
     	return NULL;
     }
+
+    strcpy(buf1, firstRequest);
+
     /* Splitting things apart - need to save state */
     char strtokState[MAXLINE];
     char * httpMethod;
@@ -251,13 +258,11 @@ void *webTalk(void *args) {
 		sprintf(buf2, "%s %s %s", "GET", file, httpVersion);
 		Rio_writen(serverfd, buf2, strlen(buf2));
 
-		fprintf(stdout, "Raw Header: %s", buf1);
+		fprintf(stdout, "Raw Header: %s", firstRequest);
     	fprintf(stdout, "New Header: %s", buf2);
 
 		/* while we haven't read the last line - the end of the request */
 		while (strcmp(buf2, "\r\n") > 0) {
-			// TODO: is this necessary?
-			//memset((void*)buf2, 0, strlen(buf2));
 
 			/* read new header from client */
 			byteCount = Rio_readlineb(&client, buf2, MAXLINE);
@@ -267,20 +272,24 @@ void *webTalk(void *args) {
 				return NULL;
 			}
 
-			/* check for connection headers */
-			if (strstr(buf2, "Connection: ") || strstr(buf2, "Proxy-Connection: ")) {
-				/* we don't want to send keep-alive, set that to close. */
-				/* We also want to send it as Connection to the server. */
-				strcpy(buf2, "Connection: close\r\n");
-			}
-			if (strstr(buf2, "Keep-Alive:")) {
+			if (strstr(buf2, "Keep-Alive:") || strstr(buf2, "Proxy-Connection: ") || strstr(buf2, "Connection: ")) {
 				/* don't send this at all - we don't likes it my precious */
 			}
 			else {
+				if (strcmp(buf2, "\r\n") == 0) {
+					sprintf(buf2, "Connection: close\r\n");
+					/* pop in a Connection: close header for good luck. */
+					Rio_writen(serverfd, buf2, strlen(buf2));
+					sprintf(buf2, "\r\n");
+				}
+
+
 				/* update length of string in case of modifications to header */
+				fprintf(stderr, "%s", buf2);
 				Rio_writen(serverfd, buf2, strlen(buf2));
 			}
 		}
+
 		/* client sent last blank line in header requests - shutdown server connection */
 		shutdown(serverfd, 1);
 
@@ -288,7 +297,7 @@ void *webTalk(void *args) {
 
 		do {
 			/* read the data from the server */
-			byteCount = Rio_readnb(&server, buf3, MAXLINE);
+			byteCount = Rio_readp(serverfd, buf3, MAXLINE);
 			/* send it to the client */
 			Rio_writen(clientfd, buf3, byteCount);
 		}
