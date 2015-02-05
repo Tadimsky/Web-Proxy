@@ -109,12 +109,12 @@ int main(int argc, char *argv[]) {
 
         pthread_t clientThread;
 
-        int * threadArgs;
-        threadArgs = malloc(sizeof(int) * 2);
-        threadArgs[0] = connfd;
-        threadArgs[1] = serverPort;
 
-        Pthread_create(&clientThread, NULL, webTalk, (void*)threadArgs);
+        args = malloc(sizeof(int) * 2);
+        args[0] = connfd;
+        args[1] = serverPort;
+
+        Pthread_create(&clientThread, NULL, webTalk, (void*)args);
 
 
         /* TODO: new connection has been made from client */
@@ -356,19 +356,41 @@ void secureTalk(int clientfd, rio_t client, char *inHost, char *version, int ser
     /* clientfd is browser */
     /* serverfd is server */
 
-    //Rio_readinitb(&server, server);
-    //buf1 = "";
-    //Rio_writen(clientfd )
+    Rio_readinitb(&server, serverfd);
+
     /* let the client know we've connected to the server */
+    sprintf(buf1, "%s 200 OK\r\n\r\n", version);
+    Rio_writen(clientfd, buf1, strlen(buf1));
 
-    /* spawn a thread to pass bytes from origin server through to client */
+    /* set up arguments for forwarder function */
+	args = malloc(sizeof(int) * 2);
+	args[0] = clientfd;
+	args[1] = serverfd;
+	/* spawn thread to pass bytes from server -> client */
+    Pthread_create(&tid, NULL, forwarder, (void*)args);
 
-    /* now pass bytes from client to server */
+    /* process bytes from client -> server */
+    while (1) {
+    	numBytes1 = Rio_readp(clientfd, buf1, MAXLINE);
+    	if (numBytes1 <= 0) {
+    		/* EOF - quit connection */
+    		break;
+    	}
+    	numBytes2 = Rio_writen(serverfd, buf1, numBytes1);
+    	if (numBytes1 != numBytes2) {
+    		/* did not write correct number of bytes */
+    		debug_print("Did not send correct number of bytes to server.");
+    		break;
+    	}
+    }
+    /* tell server we're not sending any more information */
+    shutdown(serverfd, 1);
 
+    /* join forwarder thread */
+    Pthread_join(tid, NULL);
 }
 
 /* this function is for passing bytes from origin server to client */
-
 void *forwarder(void *args) {
     int numBytes, lineNum, serverfd, clientfd;
     int byteCount = 0;
@@ -377,12 +399,23 @@ void *forwarder(void *args) {
     serverfd = ((int *) args)[1];
     free(args);
 
-    while (1) {
-
-        /* serverfd is for talking to the web server */
-        /* clientfd is for talking to the browser */
-
-    }
+    /* process bytes from server -> client*/
+	while (1) {
+		numBytes = Rio_readp(serverfd, buf1, MAXLINE);
+		if (numBytes <= 0) {
+			/* EOF - quit connection */
+			break;
+		}
+		byteCount = Rio_writen(clientfd, buf1, numBytes);
+		if (numBytes != byteCount) {
+			/* did not write correct number of bytes */
+			debug_print("Did not send correct number of bytes to client.");
+			break;
+		}
+	}
+	/* tell client we're not sending any more information */
+	shutdown(clientfd, 1);
+	return NULL;
 }
 
 
