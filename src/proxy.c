@@ -300,7 +300,26 @@ void *webTalk(void *args) {
     else {
     	if (strcmp(httpMethod, "CONNECT") == 0) {
 			debug_print("CONNECT");
-			// CONNECT: call a different function, securetalk, for HTTPS
+
+			/* need to parse this request */
+			char * requestServer = strtok_r(NULL, " ", &strtokState);
+
+			/* read the port and hostname */
+			char * serverAddress = strtok(requestServer, ":");
+			if (serverAddress == NULL) {
+				return NULL;
+			}
+			char * port = strtok(NULL, " ");
+			if (port == NULL) {
+				port = "443";
+			}
+			serverPort = atoi(port);
+
+			/* get the HTTP version */
+			char * httpVersion = strtok_r(NULL, " ", &strtokState);
+			httpVersion[strlen(httpVersion) - 2] = '\0';
+
+			secureTalk(clientfd, client, serverAddress, httpVersion, serverPort);
     	}
     	else {
     		// a different HTTP request - POST, etc
@@ -326,11 +345,20 @@ void secureTalk(int clientfd, rio_t client, char *inHost, char *version, int ser
     if (serverPort == proxyPort)
         serverPort = 443;
 
-    /* Open connecton to webserver */
+    /* connect to the server */
+    tries = 0;
+    while (tries < MAX_CONNECTION_ATTEMPTS) {
+    	serverfd = Open_clientfd(inHost, serverPort);
+    	if (serverfd >= 0) {
+    		break;
+    	}
+    }
     /* clientfd is browser */
     /* serverfd is server */
 
-
+    //Rio_readinitb(&server, server);
+    //buf1 = "";
+    //Rio_writen(clientfd )
     /* let the client know we've connected to the server */
 
     /* spawn a thread to pass bytes from origin server through to client */
