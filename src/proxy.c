@@ -112,16 +112,11 @@ int main(int argc, char *argv[]) {
 
         pthread_t clientThread;
 
-
         args = malloc(sizeof(int) * 2);
         args[0] = connfd;
         args[1] = serverPort;
 
         Pthread_create(&clientThread, NULL, webTalk, (void*)args);
-
-
-        /* TODO: new connection has been made from client */
-        /* TODO: create a new thread to handle this event so that we can listen for more connections */
     }
 
     if (debug) Close(debugfd);
@@ -131,48 +126,10 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-/* a possibly handy function that we provide, fully written */
-
-void parseAddress(char *url, char *host, char **file, int *serverPort) {
-    char *point1;
-    char *point2;
-    char *saveptr;
-
-    if (strstr(url, "http://"))
-        url = &(url[7]);
-    *file = strchr(url, '/');
-
-    strcpy(host, url);
-
-    /* first time strtok_r is called, returns pointer to host */
-    /* strtok_r (and strtok) destroy the string that is tokenized */
-
-    /* get rid of everything after the first / */
-
-    strtok_r(host, "/", &saveptr);
-
-    /* now look to see if we have a colon */
-
-    point1 = strchr(host, ':');
-    if (!point1) {
-        *serverPort = 80;
-        return;
-    }
-
-    /* we do have a colon, so get the host part out */
-    strtok_r(host, ":", &saveptr);
-
-    /* now get the part after the : */
-    *serverPort = atoi(strtok_r(NULL, "/", &saveptr));
-}
-
-
-
-/* this is the function that I spawn as a thread when a new
-   connection is accepted */
-
-/* you have to write a lot of it */
-
+/**
+ * Spawned when a new connection occurs
+ * Determines type of connection and handles appropriately.
+ */
 void *webTalk(void *args) {
     int numBytes, lineNum, serverfd, clientfd, serverPort;
     int tries;
@@ -185,7 +142,6 @@ void *webTalk(void *args) {
     rio_t server, client;
     char slash[10];
     strcpy(slash, "/");
-
 
     clientfd = ((int *) args)[0];
     serverPort = ((int *) args)[1];
@@ -213,7 +169,7 @@ void *webTalk(void *args) {
     	return NULL;
     }
 
-    if (strcmp(httpMethod, "GET") == 0) {
+    if ((strcmp(httpMethod, "GET") == 0) || (strcmp(httpMethod, "HEAD") == 0)) {
     	/* Get the URL of the Request */
     	char * requestParts = strtok_r(NULL, " ", &strtokState);
     	if (requestParts == NULL) {
@@ -255,7 +211,7 @@ void *webTalk(void *args) {
 		Rio_readinitb(&server, serverfd);
 
 		/* reformat the new GET header */
-		sprintf(buf2, "%s %s %s", "GET", file, httpVersion);
+		sprintf(buf2, "%s %s %s", httpMethod, file, httpVersion);
 		Rio_writen(serverfd, buf2, strlen(buf2));
 
 		fprintf(stdout, "Raw Header: %s", firstRequest);
@@ -331,9 +287,8 @@ void *webTalk(void *args) {
 			secureTalk(clientfd, client, serverAddress, httpVersion, serverPort);
     	}
     	else {
-    		// a different HTTP request - POST, etc
-    		debug_print("What just happened?");
-    		debug_print(httpMethod);
+    		/* a different HTTP request - POST, etc */
+    		fprintf(stderr, "Unsupported request: %s", httpMethod);
     	}
     }
     return NULL;
@@ -375,6 +330,7 @@ void secureTalk(int clientfd, rio_t client, char *inHost, char *version, int ser
 	args = malloc(sizeof(int) * 2);
 	args[0] = clientfd;
 	args[1] = serverfd;
+
 	/* spawn thread to pass bytes from server -> client */
     Pthread_create(&tid, NULL, forwarder, (void*)args);
 
@@ -388,7 +344,7 @@ void secureTalk(int clientfd, rio_t client, char *inHost, char *version, int ser
     	numBytes2 = Rio_writen(serverfd, buf1, numBytes1);
     	if (numBytes1 != numBytes2) {
     		/* did not write correct number of bytes */
-    		debug_print("Did not send correct number of bytes to server.");
+    		fprintf(stderr, "Did not send correct number of bytes to server.");
     		break;
     	}
     }
@@ -418,7 +374,7 @@ void *forwarder(void *args) {
 		byteCount = Rio_writen(clientfd, buf1, numBytes);
 		if (numBytes != byteCount) {
 			/* did not write correct number of bytes */
-			debug_print("Did not send correct number of bytes to client.");
+			fprintf(stderr, "Did not send correct number of bytes to client.");
 			break;
 		}
 	}
