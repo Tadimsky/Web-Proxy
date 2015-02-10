@@ -219,6 +219,8 @@ void *webTalk(void *args) {
 
 		/* while we haven't read the last line - the end of the request */
 		while (strcmp(buf2, "\r\n") > 0) {
+			/* wipe memory */
+			memset((void*)buf2, 0, MAXLINE);
 
 			/* read new header from client */
 			byteCount = Rio_readlineb(&client, buf2, MAXLINE);
@@ -239,7 +241,6 @@ void *webTalk(void *args) {
 					sprintf(buf2, "\r\n");
 				}
 
-
 				/* update length of string in case of modifications to header */
 				fprintf(stderr, "%s", buf2);
 				Rio_writen(serverfd, buf2, strlen(buf2));
@@ -247,7 +248,6 @@ void *webTalk(void *args) {
 		}
 
 		/* client sent last blank line in header requests - shutdown server connection */
-		shutdown(serverfd, 1);
 
 		debug_print("Sent Headers - now receiving");
 
@@ -260,12 +260,12 @@ void *webTalk(void *args) {
 		while (byteCount > 0);
 		/* Means EOF: shutdown sending to client */
 		shutdown(clientfd, 1);
+		/* NOTE: shutting down the server first causes problems with some websites. Esp cloudfare, etc. */
+		shutdown(serverfd, 1);
 		debug_print("Transferred.");
     }
     else {
     	if (strcmp(httpMethod, "CONNECT") == 0) {
-			debug_print("CONNECT");
-
 			/* need to parse this request */
 			char * requestServer = strtok_r(NULL, " ", &strtokState);
 
@@ -274,6 +274,8 @@ void *webTalk(void *args) {
 			if (serverAddress == NULL) {
 				return NULL;
 			}
+			fprintf(stdout, "CONNECT - %s\n", requestServer);
+
 			char * port = strtok(NULL, " ");
 			if (port == NULL) {
 				port = "443";
@@ -288,7 +290,7 @@ void *webTalk(void *args) {
     	}
     	else {
     		/* a different HTTP request - POST, etc */
-    		fprintf(stderr, "Unsupported request: %s", httpMethod);
+    		fprintf(stderr, "Unsupported request: %s\n", httpMethod);
     	}
     }
     return NULL;
@@ -344,7 +346,7 @@ void secureTalk(int clientfd, rio_t client, char *inHost, char *version, int ser
     	numBytes2 = Rio_writen(serverfd, buf1, numBytes1);
     	if (numBytes1 != numBytes2) {
     		/* did not write correct number of bytes */
-    		fprintf(stderr, "Did not send correct number of bytes to server.");
+    		fprintf(stderr, "Did not send correct number of bytes to server.\n");
     		break;
     	}
     }
@@ -374,7 +376,7 @@ void *forwarder(void *args) {
 		byteCount = Rio_writen(clientfd, buf1, numBytes);
 		if (numBytes != byteCount) {
 			/* did not write correct number of bytes */
-			fprintf(stderr, "Did not send correct number of bytes to client.");
+			fprintf(stderr, "Did not send correct number of bytes to client.\n");
 			break;
 		}
 	}
